@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>神ゲー最終完成版</title>
+
+<style>
+body { margin:0; overflow:hidden; background:#111; }
+#game { width:100vw; height:100vh; position:relative; }
+
+.lane {
+    position:absolute;
+    width:20%;
+    height:100%;
+    border-left:1px solid #333;
+}
+
+#player {
+    width:50px;
+    height:50px;
+    background:cyan;
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+}
+
+.obstacle {
+    width:50px;
+    height:50px;
+    background:red;
+    position:absolute;
+}
+
+#score { position:absolute; top:10px; left:10px; color:white; }
+
+#gauge {
+    position:absolute;
+    bottom:10px;
+    left:10px;
+    width:200px;
+    height:10px;
+    background:#333;
+}
+#gaugeInner {
+    height:100%;
+    width:0%;
+    background:lime;
+}
+</style>
+</head>
+
+<body>
+
+<div id="game">
+    <div class="lane" style="left:0%"></div>
+    <div class="lane" style="left:20%"></div>
+    <div class="lane" style="left:40%"></div>
+    <div class="lane" style="left:60%"></div>
+    <div class="lane" style="left:80%"></div>
+
+    <div id="player"></div>
+    <div id="score">0</div>
+    <div id="gauge"><div id="gaugeInner"></div></div>
+</div>
+
+<script>
+const scoreEl = document.getElementById("score");
+const gaugeEl = document.getElementById("gaugeInner");
+
+let lane = 2;
+let obstacles = [];
+let score = 0;
+let avoidCount = 0;
+let gauge = 0;
+
+const laneWidth = window.innerWidth / 5;
+const hitY = window.innerHeight / 2;
+
+// ===== 音 =====
+const music = new Audio("canon.mp3");
+function play(path){ new Audio(path).play(); }
+
+// ===== BPM =====
+const BPM = 43.0;
+const baseBeat = 60 / BPM;
+let currentBeat = baseBeat;
+
+let nextBeatTime = 0;
+let speedChanged = false;
+
+// ===== プレイヤー =====
+function updatePlayer(){
+    document.getElementById("player").style.left =
+        laneWidth * lane + laneWidth/2 + "px";
+}
+
+// ===== ノーツ生成 =====
+function spawn(){
+    let count = Math.random() < 0.4 ? 2 : 1;
+
+    for(let i=0;i<count;i++){
+        let laneIndex = Math.floor(Math.random()*5);
+        let fromTop = Math.random() < 0.5;
+        let spawnY = fromTop ? -60 : window.innerHeight + 60;
+
+        let speed = 3 + Math.random() * 2;
+
+        let el = document.createElement("div");
+        el.className = "obstacle";
+        document.getElementById("game").appendChild(el);
+
+        obstacles.push({
+            el,
+            lane: laneIndex,
+            y: spawnY,
+            dir: fromTop ? 1 : -1,
+            speed: speed
+        });
+    }
+}
+
+// ===== 更新 =====
+function update(){
+
+    // ⭐ スコア60で倍速
+    if(score >= 55 && !speedChanged){
+        currentBeat = baseBeat / 2;
+        speedChanged = true;
+        play("speedup.mp3");
+    }
+
+    obstacles.forEach((o,i)=>{
+        o.y += o.speed * o.dir;
+
+        o.el.style.top = o.y + "px";
+        o.el.style.left = laneWidth * o.lane + laneWidth/2 + "px";
+        o.el.style.transform = "translateX(-50%)";
+
+        if(
+            o.lane === lane &&
+            Math.abs(o.y - hitY) < 35
+        ){
+            play("fail.mp3");
+            alert("ゲームオーバー スコア:"+score);
+            location.reload();
+        }
+
+        if(o.y < -100 || o.y > window.innerHeight+100){
+            o.el.remove();
+            obstacles.splice(i,1);
+
+            score++;
+            avoidCount++;
+
+            if(avoidCount >= 20){
+                gauge = 100;
+            } else {
+                gauge = (avoidCount/20)*100;
+            }
+
+            gaugeEl.style.width = gauge + "%";
+        }
+    });
+
+    scoreEl.textContent = score;
+}
+
+// ===== 必殺 =====
+function special(){
+    if(gauge >= 100){
+        obstacles.forEach(o=>o.el.remove());
+        obstacles = [];
+        play("boom.mp3");
+
+        gauge = 0;
+        avoidCount = 0;
+        gaugeEl.style.width = "0%";
+    }
+}
+
+// ===== 操作 =====
+let startX=0, startY=0;
+
+document.addEventListener("touchstart",e=>{
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+});
+
+document.addEventListener("touchend",e=>{
+    let dx = e.changedTouches[0].clientX - startX;
+    let dy = e.changedTouches[0].clientY - startY;
+
+    if(dx > 30 && lane < 4) lane++;
+    if(dx < -30 && lane > 0) lane--;
+
+    if(dy < -50) special();
+
+    updatePlayer();
+});
+
+document.addEventListener("keydown",e=>{
+    if(e.key==="ArrowRight" && lane<4) lane++;
+    if(e.key==="ArrowLeft" && lane>0) lane--;
+    if(e.key===" ") special();
+    updatePlayer();
+});
+
+// ===== ループ =====
+function loop(){
+    let t = music.currentTime;
+
+    if(t >= nextBeatTime){
+        spawn();
+        play("avoid.mp3");
+        nextBeatTime += currentBeat;
+    }
+
+    update();
+    requestAnimationFrame(loop);
+}
+
+// ===== 開始 =====
+function start(){
+    music.play();
+    nextBeatTime = music.currentTime;
+    loop();
+}
+
+document.body.addEventListener("click", start, {once:true});
+document.body.addEventListener("touchstart", start, {once:true});
+
+updatePlayer();
+</script>
+
+</body>
+</html>
